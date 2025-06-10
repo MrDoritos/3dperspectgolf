@@ -1,0 +1,3 @@
+#include "console.h"
+#include <math.h>
+int main(){float px,py,pa=0;int cw=console::getConsoleWidth(),ch=console::getConsoleHeight();while(1){console::clear();for(float th=-0.79f;th<=0.78f;th+=1.0f/cw/1.57f){for(float tr=2.0f;tr<150.0f;tr+=0.05f+(tr*0.05f)){float u,w,v,x=(tr*sinf(pa+th)+px)/40,y=(tr*-cosf(pa+th)+py)/40;int n=u=w=0,fl=(ch/2)-ch/tr;while(u*u+w*w<4&&n++<256){v=u*u-w*w+x;w=2*u*w+y;u=v;}if (n%8==3){for(int y=fl;y<ch-fl;)console::write((0.79f+th)*(cw/1.57f),y++,"#@MNO&%*+=;:,. "[int(sqrt(tr * 1.5))],7);break;}}}switch (NOMOD(console::readKey())){case 's':px-=sinf(pa)*0.5f;py+=cosf(pa)*0.5f;break;case 'w':px+=sinf(pa)*0.5f;py-=cosf(pa)*0.5f;break;case 'a':pa-=0.39f;break;case 'd':pa+=0.39f;break;}}}
