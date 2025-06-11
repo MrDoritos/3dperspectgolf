@@ -1,9 +1,12 @@
-#include "console.h"
+//#include "console.h"
 #include <stdio.h>
+#include <iostream>
+#include <string.h>
 #include <math.h>
+#include <vector>
 
-#include "../imgcat/colorMappingFast.h"
-
+#include "console.h"
+#include "colorMappingPalette.h"
 
 typedef struct {
     double r;       // a fraction between 0 and 1
@@ -123,61 +126,59 @@ rgb hsv2rgb(hsv in)
     return out;     
 }
 
+using mb_t = long double;
+//typedef double mb_t;
 
 int wmain() {
+	colormapper_init_table();
+
 	int cw = console::getConsoleWidth(), ch = console::getConsoleHeight();
 	int chars = cw * ch;
 	wchar_t fb[chars + 1];
 	color_t cb[chars + 1];
-	float pixtlx = 0;
-	float pixtly = 0;
-	float pixbrx = cw;
-	float pixbry = ch;
-	float fractlx = -2.0f;
-	float fractly = -1.0f;
-	float fracbrx = 1.0f;
-	float fracbry = 1.0f;
-	float vscalex = cw;
-	float vscaley = ch;
-	float offsetx = 0.0f;
-	float offsety = 0.0f;
-	fractlx = (pixtlx) / vscalex + 0.0f;
-	fractly = (pixtly) / vscaley + 0.0f;
-	fracbrx = (pixbrx) / vscalex + 0.0f;
-	fracbry = (pixbry) / vscaley + 0.0f;
-	
+	//float pixtlx = 0;
+	//float pixtly = 0;
+	//float pixbrx = cw;
+	//float pixbry = ch;
+	//mb_t fractlx = -2.0f;
+	//mb_t fractly = -1.0f;
+	//mb_t fracbrx = 1.0f;
+	//mb_t fracbry = 1.0f;
+	//mb_t vscalex = cw;
+	//mb_t vscaley = ch;
+	//mb_t offsetx = 0.0f;
+	//mb_t offsety = 0.0f;
+	//fractlx = (pixtlx) / vscalex + 0.0;
+	//fractly = (pixtly) / vscaley + 0.0;
+	//fracbrx = (pixbrx) / vscalex + 0.0;
+	//fracbry = (pixbry) / vscaley + 0.0;
+	mb_t frame_x = 0, frame_y = 0, scale_x = 1, scale_y = 1;
+	mb_t width = console::getConsoleWidth(), height = console::getConsoleHeight();
+
 	while (true) {
-		float xscale = (fracbrx - fractlx) / (float(pixbrx) - float(pixtlx));
-		float yscale = (fracbry - fractly) / (float(pixbry) - float(pixtly));
+		//mb_t xscale = (fracbrx - fractlx) / mb_t(float(pixbrx) - float(pixtlx));
+		//mb_t yscale = (fracbry - fractly) / mb_t(float(pixbry) - float(pixtly));
 		console::clear();
 		for (int x = 0; x < cw; x++) {
 			for (int y = 0; y < ch; y++) {
-				float c_w = x * xscale + fractlx;
-				float c_h = y * yscale + fractly;
-				float zw = 0.0f;
-				float zh = 0.0f;
+				mb_t u = mb_t(x)/width-0.5, v = mb_t(y)/height-0.5;
+				mb_t c_w = scale_x * u + frame_x;
+				mb_t c_h = scale_y * v + frame_y;
+				mb_t zx = 0.0, zy = 0.0;
+				mb_t zx2 = 0.0, zy2 = 0.0;
 				int n = 0;
-				/*
-				while (abs(zh) < 2.0f && abs(zw) < 2.0f && n < 128) {
-					zw = (zw * zw) + c_w;
-					zh = (zh * zh) + c_h;
+
+				mb_t tempx;
+				while (1) {
+					zx2 = zx * zx, zy2 = zy * zy;
+					if (zx2 + zy2 >= 4.0 || n > 255)
+						break;
+					tempx = zx2 - zy2 + c_w;
+					zy = 2.0 * zx * zy + c_h;
+					zx = tempx;
 					n++;
 				}
-				*/
-				float tempx;
-				while ((zw * zw + zh * zh < 4) && (n < 128)) {
-					tempx = zw * zw - zh * zh + c_w;
-					zh = 2.0f * zw * zh + c_h;
-					zw = tempx;
-					n++;
-				}
-				//console::write(x, y, L"#&*!;',."[n % 8], 7);
-				fb[y * cw + x] = L"#&*!;',."[n % 8];
-				cb[y * cw + x] = 7;
-								
-				//hsv hsv = { (n % 16) / 16.0f, n / 128.0f, 1.0d };
-				//rgb rgb = hsv2rgb(hsv);
-				//getDitherColored(rgb.r * 256, rgb.g * 256, rgb.b * 256, &fb[y * cw + x], &cb[y * cw + x]);
+
 				float a = 0.1f;
 				float p = 0.5f;
 				float pp = 255.0f;
@@ -190,31 +191,34 @@ int wmain() {
 		
 		switch (NOMOD(console::readKey())){
 			case 's':
-				offsety += 10.0f/vscaley;
+				frame_y += scale_y * 0.1;
 				break;
 			case 'w':
-				offsety -= 10.0f/vscaley;
+				frame_y -= scale_y * 0.1;
 				break;
 			case 'a':
-				offsetx -= 10.0f/vscalex;
+				frame_x -= scale_x * 0.1;
 				break;
 			case 'd':
-				offsetx += 10.0f/vscalex;
+				frame_x += scale_x * 0.1;
 				break;
-			case 'z':
-				vscalex *= 1.1f;
-				vscaley *= 1.1f;
-				break;
+			case '.':
 			case 'x':
-				vscalex *= 0.9f;
-				vscaley *= 0.9f;
+				scale_x *= 1.5;
+				scale_y *= 1.5;
 				break;
+			case ',':
+			case 'z':
+				scale_x *= 0.66667;
+				scale_y *= 0.66667;
+				break;
+			case 'q':
 			case VK_ESCAPE:
 				return 0;
 		}
-		fractlx = (pixtlx) / vscalex + offsetx;
-		fractly = (pixtly) / vscaley + offsety;
-		fracbrx = (pixbrx) / vscalex + offsetx;
-		fracbry = (pixbry) / vscaley + offsety;
+		//fractlx = (pixtlx) / vscalex - 0.5 + offsetx;
+		//fractly = (pixtly) / vscaley - 0.5 + offsety;
+		//fracbrx = (pixbrx) / vscalex - 0.5 + offsetx;
+		//fracbry = (pixbry) / vscaley - 0.5 + offsety;
 	}
 }
