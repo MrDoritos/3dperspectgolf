@@ -102,10 +102,12 @@ void scale_by_factor(const mpf_t &scale, mpf_t &pos, double factor=0.1, bool dir
 
 int thread_count = 4;
 mp_bitcnt_t precision = 64;
-bool run_ui, redraw, quit_request;
+bool run_ui;
+int redraw, quit_request;
+int thread_states[2];
 // Render from main thread
 bool adv_offload = false;
-std::mutex mutex_lock;
+std::mutex mutex_lock, mutex_thread_state;
 std::condition_variable cv_lock;
 std::vector<std::thread> drawing_threads;
 
@@ -113,7 +115,39 @@ mpf_t frame_x, frame_y, scale_x, scale_y, addend, multiplicand_a, multiplicand_b
 
 void wait_for_cv() {
 	std::unique_lock<std::mutex> lock(mutex_lock);
-	cv_lock.wait(lock);
+	cv_lock.wait(lock, [](){ return redraw || !run_ui; });
+}
+
+namespace states {
+	enum State {
+		DRAWING=0,
+		WAITING=1,
+	};
+};
+
+inline bool get_state(const int &flag, const states::State &state) {
+	return (thread_states[int(state)] & flag) > 0;
+}
+
+void draw_thread_states() {
+	const int buflen = 30;
+	char buf[buflen];
+	snprintf(buf, buflen, "redraw %i", redraw);
+	adv::write(0, 1, buf);
+
+	for (int i = 0; i < thread_count; i++) {
+		int flag = 1 << i;
+
+		std::string_view state("Unkn");
+
+		if (get_state(flag, states::DRAWING))
+			state = "Draw";
+		else if (get_state(flag, states::WAITING))
+			state = "Wait";
+
+		snprintf(buf, buflen, "%i %s", i, state.data());
+		adv::write(0, i+2, buf);
+	}
 }
 
 void draw_debug_info() {
@@ -123,6 +157,15 @@ void draw_debug_info() {
 	snprintf(&buf[p], buflen-p, ", precision: %i", int(precision));
 
 	adv::write(0,0,buf);
+
+	draw_thread_states();
+}
+
+inline void set_state(const int &flag, const states::State &state, const bool &v) {
+	if (v)
+		thread_states[int(state)] |= flag;
+	else
+		thread_states[int(state)] &= ~flag;
 }
 
 void draw_block(const int &x, const int &y, const cpix_t &c, const int &blocksize) {
@@ -146,11 +189,13 @@ const inline cpix_t get_mandelbrot_sample(const float &u, const float &v) {
 
 void draw_thread(float startx, float starty, float sizex, float sizey, int flag) {
 	fprintf(stderr, "thread: %i\n", flag);
-	
+
 	while (run_ui) {
+		int redraw_count = 0;
 		//adv::clear();
 
 		//draw_debug_info();
+		set_state(flag, states::DRAWING, true);
 
 		double w = adv::width, h = adv::height;
 		int sx = startx * w, sy = starty * h;
@@ -158,31 +203,42 @@ void draw_thread(float startx, float starty, float sizex, float sizey, int flag)
 
 		//int bsinit = 2 * 2 * 2;
 		int bsinit = 2;
+		const int alternate = 3;
 		for (float bs = bsinit; bs >= 1; bs /= 2) {
-			for (int y = sy; y < ey; y+=bs) {
-				for (int x = sx; x < ex; x+=bs) {
+			for (int i = 0; i < alternate+1; i++)
+			for (int j = 0; j < alternate+1; j++)
+			for (int y = sy + i; y < ey; y+=(bs + alternate)) {
+				for (int x = sx + j; x < ex; x+=(bs + alternate)) {
 					draw_block(x, y, get_mandelbrot_sample(x/w,y/h), bs);
 					
 					if (redraw & flag) {
-						x = 0;
-						y = 0;
-						bs = bsinit;
-						redraw &= ~flag;
+						{
+							//std::lock_guard<std::mutex> lock(mutex_lock);
+							redraw &= ~flag;
+							redraw_count++;
+							x = sx;
+							y = sy;
+							i = 0;
+							j = 0;
+							bs = bsinit;
+						}
 					}
 				}
 			}
 		}
+
+		set_state(flag, states::DRAWING, false);
+		set_state(flag, states::WAITING, true);
 		
-		if (!(redraw & flag))
-			wait_for_cv();
-		else {
-			redraw &= ~flag;
-		}
+		wait_for_cv();
+
+		set_state(flag, states::WAITING, false);
 	}
 }
 
 void params_change() {
-	redraw = 0xffffffff;
+	std::lock_guard<std::mutex> lock(mutex_lock);
+	redraw = thread_count * thread_count - 1;
 	cv_lock.notify_all();
 }
 
@@ -190,8 +246,8 @@ void reset() {
 	mpf_set_default_prec(precision);
 	mpf_init_set_d(frame_x, -0.721439766601316804051f);
 	mpf_init_set_d(frame_y, 0.259233725333566523653f);
-	mpf_init_set_d(scale_x, 0.79560530175511f);
-	mpf_init_set_d(scale_y, 0.79560530175511f);
+	mpf_init_set_d(scale_x, 1.3+1.79560530175511f);
+	mpf_init_set_d(scale_y, 0.2+1.79560530175511f);
 	mpf_init_set_d(addend, 1.0f);
 	mpf_init_set_d(multiplicand_a, 1.5f);
 	mpf_init_set_d(multiplicand_b, 0.5f);
@@ -322,7 +378,7 @@ void input_loop() {
 
 		adv::isNewSize();
 
-		//draw_debug_info();
+		draw_debug_info();
 
 		if (!adv_offload)
 			adv::draw();
